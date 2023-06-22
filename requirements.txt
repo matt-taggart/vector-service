@@ -1,0 +1,6 @@
+vecs
+flask
+llama-index
+requests
+html2text
+python-dotenv
