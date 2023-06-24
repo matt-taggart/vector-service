@@ -14,6 +14,7 @@ from llama_index.vector_stores import SupabaseVectorStore
 from llama_index.node_parser import SimpleNodeParser
 
 from init_env import load_env_vars
+from auth import authenticate 
 
 load_env_vars()
 
@@ -61,8 +62,6 @@ def get_connection():
     pages_results = pages['results']
 
     documents = []
-
-    print('got here!')
 
     for page in pages_results:
         id = page['id']
@@ -118,7 +117,11 @@ def ask_question():
     query_engine = index.as_query_engine()
     response = query_engine.query(query)
 
-    return str(response)
+    data = {
+      "answer": str(response)
+    }
+
+    return json.dumps(data)
 
 
 if __name__ == '__main__':
