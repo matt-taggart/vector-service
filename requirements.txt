@@ -5,3 +5,6 @@ requests
 html2text
 python-dotenv
 langchain
+markdown
+PyJWT
+supabase

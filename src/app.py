@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import requests
 from requests.auth import HTTPBasicAuth
 import json
@@ -6,6 +6,8 @@ from html2text import html2text
 import os
 import textwrap
 import openai
+import markdown
+import jwt
 
 import vecs
 from llama_index import ListIndex, SimpleWebPageReader, SimpleDirectoryReader, Document, StorageContext, load_index_from_storage
@@ -28,11 +30,13 @@ OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 DB_CONNECTION_STRING = os.environ.get('DB_CONNECTION_STRING')
 CONFLUENCE_EMAIL = os.environ.get('CONFLUENCE_EMAIL')
 CONFLUENCE_API_TOKEN = os.environ.get('CONFLUENCE_API_TOKEN')
+PROJECT_PILOT_API_KEY = os.environ.get("PROJECT_PILOT_API_KEY")
 
 app = Flask(__name__)
 parser = SimpleNodeParser()
 
 @app.route('/initialize')
+@authenticate
 def get_connection():
     url = "https://redelklabs.atlassian.net/wiki/api/v2/pages?body-format=storage"
 
@@ -94,12 +98,11 @@ def get_connection():
     return 'Successfully initialized Confluence data.'
 
 @app.route('/ask', methods=['POST'])
+@authenticate
 def ask_question():
     data = request.json
     query = data['query']
     messages = data['messages']
-
-    print('messages', messages)
 
     vector_store = SupabaseVectorStore(
         postgres_connection_string=DB_CONNECTION_STRING, 
@@ -141,16 +144,17 @@ def ask_question():
         verbose=True
     )
 
-    enhanced_query = f"Use the tool to answer: {query}. Please output the answer in Markdown format."
+    enhanced_query = f"Use the tool to answer: {query}. Output the answer in Markdown format."
 
     response = agent_chain.run(input=enhanced_query)
-    print('response', response)
+
+    print('markdown', markdown.markdown(response));
 
     data = {
-      "answer": str(response)
+      "answer": markdown.markdown(response)
     }
 
-    return json.dumps(data)
+    return jsonify(data)
 
 
 if __name__ == '__main__':
