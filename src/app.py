@@ -12,6 +12,12 @@ from llama_index import ListIndex, SimpleWebPageReader, SimpleDirectoryReader, D
 from llama_index.indices.vector_store import VectorStoreIndex
 from llama_index.vector_stores import SupabaseVectorStore
 from llama_index.node_parser import SimpleNodeParser
+from llama_index.prompts  import Prompt
+from llama_index.chat_engine.condense_question import CondenseQuestionChatEngine
+from llama_index.langchain_helpers.agents import LlamaToolkit, create_llama_chat_agent, IndexToolConfig
+from langchain.chains.conversation.memory import ConversationBufferMemory
+from langchain.agents import initialize_agent
+from langchain import OpenAI
 
 from init_env import load_env_vars
 from auth import authenticate 
@@ -84,16 +90,16 @@ def get_connection():
     )
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     index = VectorStoreIndex.from_documents(documents, storage_context=storage_context)
-    query_engine = index.as_query_engine()
 
-    response = query_engine.query("What were the goals and OKRs listed for the June 2023 all-hands meeting?")
-
-    return str(response)
+    return 'Successfully initialized Confluence data.'
 
 @app.route('/ask', methods=['POST'])
 def ask_question():
     data = request.json
     query = data['query']
+    messages = data['messages']
+
+    print('messages', messages)
 
     vector_store = SupabaseVectorStore(
         postgres_connection_string=DB_CONNECTION_STRING, 
@@ -104,9 +110,41 @@ def ask_question():
     doc_data = vx.get_collection(name="llm-demo")
 
     index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
-
     query_engine = index.as_query_engine()
-    response = query_engine.query(query)
+
+    tool_config = IndexToolConfig(
+        query_engine=query_engine, 
+        name="confluence_tool",
+        description="useful for querying confluence documentation",
+        tool_kwargs={"return_direct": True}
+    )
+
+    toolkit = LlamaToolkit(
+        index_configs=[tool_config]
+    )
+
+    memory = ConversationBufferMemory(memory_key="chat_history")
+
+    for message in messages:
+        if message["type"] == "user":
+            memory.chat_memory.add_user_message(message['value'])
+        else:
+            memory.chat_memory.add_ai_message(message['value'])
+
+    llm=OpenAI(temperature=0)
+
+    agent_chain = create_llama_chat_agent(
+        toolkit,
+        llm,
+        memory=memory,
+        query_engine=query_engine,
+        verbose=True
+    )
+
+    enhanced_query = f"Use the tool to answer: {query}. Please output the answer in Markdown format."
+
+    response = agent_chain.run(input=enhanced_query)
+    print('response', response)
 
     data = {
       "answer": str(response)
