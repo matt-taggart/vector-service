@@ -103,17 +103,8 @@ def ask_question():
     vx = vecs.create_client(DB_CONNECTION_STRING)
     doc_data = vx.get_collection(name="llm-demo")
 
-    embedding = openai.Embedding.create(input = [query], model="text-embedding-ada-002")['data'][0]['embedding']
+    index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
 
-    docs = doc_data.query(query_vector=embedding, measure="cosine_distance", include_value=True, include_metadata=True, limit=3)
-
-    parsed_docs = []
-
-    for doc in docs:
-        entry = doc[2]
-        parsed_docs.append(Document(text=entry['text'], doc_id=entry['doc_id'], extra_info={'title': entry['title'], 'url': entry['url']  }))
-
-    index = ListIndex.from_documents(parsed_docs)
     query_engine = index.as_query_engine()
     response = query_engine.query(query)
 
