@@ -35,15 +35,22 @@ PROJECT_PILOT_API_KEY = os.environ.get("PROJECT_PILOT_API_KEY")
 app = Flask(__name__)
 parser = SimpleNodeParser()
 
-@app.route('/initialize')
+@app.route('/initialize', methods=['POST'])
 @authenticate
 def get_connection():
-    url = "https://redelklabs.atlassian.net/wiki/api/v2/pages?body-format=storage"
+    data = request.json
+    client_key = data['clientKey']
+    base_url = data['baseUrl']
+    org_name = base_url.split('https://')[1].split('.')[0]
 
-    auth = HTTPBasicAuth(CONFLUENCE_EMAIL, CONFLUENCE_API_TOKEN)
+    url = f"{base_url}/api/v2/pages?body-format=storage"
+
+    token_header = request.headers.get('Authorization')
+    token = token_header.split(' ')[1]
 
     headers = {
-      "Accept": "application/json"
+      "Accept": "application/json",
+      "Authorization": f"JWT {token}"
     }
 
     payload = json.dumps({
@@ -64,8 +71,7 @@ def get_connection():
        "GET",
        url,
        data=payload,
-       headers=headers,
-       auth=auth
+       headers=headers
     )
 
     pages = json.loads(response.text)
@@ -76,7 +82,6 @@ def get_connection():
     for page in pages_results:
         id = page['id']
         title = page['title']
-        base_url = 'https://redelklabs.atlassian.net/wiki' 
         url_fragment = page['_links']['webui']
         full_url = base_url + url_fragment
         html_content = page['body']['storage']['value']
@@ -90,7 +95,7 @@ def get_connection():
 
     vector_store = SupabaseVectorStore(
         postgres_connection_string=DB_CONNECTION_STRING, 
-        collection_name='llm-demo'
+        collection_name=org_name
     )
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     index = VectorStoreIndex.from_documents(documents, storage_context=storage_context)

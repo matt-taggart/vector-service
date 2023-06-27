@@ -39,15 +39,9 @@ def authenticate(func):
             return jsonify({"message": "Unauthorized request"}), 403
 
         try:
-            # Replace 'secret' with your secret key
-            jwt.decode(token, shared_secret, algorithms=["HS256"], audience=client_key)
+            jwt.decode(token, shared_secret, algorithms=["HS256"])
             return func(*args, **kwargs)
         except jwt.exceptions.InvalidTokenError as e:
             return jsonify({"message": "Unauthorized request"}), 403
-
-        # If the token is valid, you can add the decoded data to Flask's `g` object,
-        # which is a global object that lasts for the duration of the request.
-        # Then, your route handlers can access this data if they need to.
-        # Note: import g from flask, i.e., from flask import g
 
     return decorated_function
