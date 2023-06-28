@@ -39,7 +39,7 @@ def authenticate(func):
             return jsonify({"message": "Unauthorized request"}), 403
 
         try:
-            jwt.decode(token, shared_secret, algorithms=["HS256"])
+            jwt.decode(token, shared_secret, algorithms=["HS256"], audience=client_key)
             return func(*args, **kwargs)
         except jwt.exceptions.InvalidTokenError as e:
             return jsonify({"message": "Unauthorized request"}), 403

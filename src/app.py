@@ -93,12 +93,17 @@ def get_connection():
             extra_info={'title': title, 'url': full_url }
         ))
 
+
     vector_store = SupabaseVectorStore(
         postgres_connection_string=DB_CONNECTION_STRING, 
         collection_name=org_name
     )
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     index = VectorStoreIndex.from_documents(documents, storage_context=storage_context)
+
+    vx = vecs.create_client(DB_CONNECTION_STRING)
+    docs = vx.get_collection(name=org_name)
+    docs.create_index(measure=vecs.IndexMeasure.cosine_distance)
 
     return 'Successfully initialized Confluence data.'
 
@@ -108,14 +113,17 @@ def ask_question():
     data = request.json
     query = data['query']
     messages = data['messages']
+    client_key = data['clientKey']
+    base_url = data['baseUrl']
+    org_name = base_url.split('https://')[1].split('.')[0]
 
     vector_store = SupabaseVectorStore(
         postgres_connection_string=DB_CONNECTION_STRING, 
-        collection_name='llm-demo'
+        collection_name=org_name
     )
 
     vx = vecs.create_client(DB_CONNECTION_STRING)
-    doc_data = vx.get_collection(name="llm-demo")
+    doc_data = vx.get_collection(name=org_name)
 
     index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
     query_engine = index.as_query_engine()
