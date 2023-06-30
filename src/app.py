@@ -8,6 +8,7 @@ import textwrap
 import openai
 import markdown
 import jwt
+from sqlalchemy import create_engine, text, select, delete, Table, MetaData
 
 import vecs
 from llama_index import ListIndex, SimpleWebPageReader, SimpleDirectoryReader, Document, StorageContext, load_index_from_storage
@@ -93,6 +94,26 @@ def get_connection():
             extra_info={'title': title, 'url': full_url }
         ))
 
+    engine = create_engine(DB_CONNECTION_STRING)
+
+    # Initialize a metadata object
+    metadata = MetaData()
+
+    # Define the table
+    table = Table(org_name, metadata, autoload_with=engine, schema='vecs')
+
+    ids_to_delete = []
+
+    # Start a new session
+    with engine.connect() as connection:
+        # Execute a query
+        result = connection.execute(select(table.c.id))
+
+        # Fetch all rows
+        ids = result.fetchall()
+
+        for id in ids:
+            ids_to_delete.append(id[0])
 
     vector_store = SupabaseVectorStore(
         postgres_connection_string=DB_CONNECTION_STRING, 
@@ -104,6 +125,15 @@ def get_connection():
     vx = vecs.create_client(DB_CONNECTION_STRING)
     docs = vx.get_collection(name=org_name)
     docs.create_index(measure=vecs.IndexMeasure.cosine_distance)
+
+    vx.disconnect()
+
+    # Cleanup
+    stmt = delete(table).where(table.c.id.in_(ids_to_delete))
+
+    with engine.connect() as connection:
+        connection.execute(stmt)
+        connection.commit()
 
     return 'Successfully initialized Confluence data.'
 
@@ -121,9 +151,6 @@ def ask_question():
         postgres_connection_string=DB_CONNECTION_STRING, 
         collection_name=org_name
     )
-
-    vx = vecs.create_client(DB_CONNECTION_STRING)
-    doc_data = vx.get_collection(name=org_name)
 
     index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
     query_engine = index.as_query_engine()
