@@ -8,3 +8,8 @@ langchain
 markdown
 PyJWT
 supabase
+sqlalchemy
+apscheduler
+pytz
+django
+atlassian-jwt-auth

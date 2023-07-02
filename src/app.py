@@ -9,6 +9,9 @@ import openai
 import markdown
 import jwt
 from sqlalchemy import create_engine, text, select, delete, Table, MetaData
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from django.utils.html import urlize
 
 import vecs
 from llama_index import ListIndex, SimpleWebPageReader, SimpleDirectoryReader, Document, StorageContext, load_index_from_storage
@@ -36,9 +39,23 @@ PROJECT_PILOT_API_KEY = os.environ.get("PROJECT_PILOT_API_KEY")
 app = Flask(__name__)
 parser = SimpleNodeParser()
 
+jobstores = {
+    'default': SQLAlchemyJobStore(DB_CONNECTION_STRING)
+}
+
+def job():
+    print('run job')
+    # your job here; for instance, calling an endpoint on your Flask server
+    # if the job involves making an HTTP request, you can use requests.get('http://localhost:5000/your-endpoint')
+
+scheduler = BackgroundScheduler(daemon=True, jobstores=jobstores)
+# Run job every day at a specific time
+scheduler.add_job(job, trigger='cron', hour=21, minute=43)
+scheduler.start()
+
 @app.route('/initialize', methods=['POST'])
 @authenticate
-def get_connection():
+def create_embeddings():
     data = request.json
     client_key = data['clientKey']
     base_url = data['baseUrl']
@@ -86,10 +103,15 @@ def get_connection():
         url_fragment = page['_links']['webui']
         full_url = base_url + url_fragment
         html_content = page['body']['storage']['value']
-        content = html2text(html_content)
+        content = f"""
+         The url for the content below is: {full_url}.
+
+         The content of this document is {html_content}.
+        """
+        formatted_content = html2text(content)
 
         documents.append(Document(
-            text=content,
+            text=formatted_content,
             doc_id=id,
             extra_info={'title': title, 'url': full_url }
         ))
@@ -188,10 +210,10 @@ def ask_question():
 
     response = agent_chain.run(input=enhanced_query)
 
-    print('markdown', markdown.markdown(response));
+    print('markdown', urlize(markdown.markdown(response)));
 
     data = {
-      "answer": markdown.markdown(response)
+      "answer": urlize(markdown.markdown(response))
     }
 
     return jsonify(data)
