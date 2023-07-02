@@ -11,5 +11,4 @@ supabase
 sqlalchemy
 apscheduler
 pytz
-django
 atlassian-jwt-auth

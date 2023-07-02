@@ -11,7 +11,6 @@ import jwt
 from sqlalchemy import create_engine, text, select, delete, Table, MetaData
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from django.utils.html import urlize
 
 import vecs
 from llama_index import ListIndex, SimpleWebPageReader, SimpleDirectoryReader, Document, StorageContext, load_index_from_storage
@@ -27,6 +26,7 @@ from langchain import OpenAI
 
 from init_env import load_env_vars
 from auth import authenticate 
+from utils import linkify 
 
 load_env_vars()
 
@@ -159,6 +159,7 @@ def create_embeddings():
 
     return 'Successfully initialized Confluence data.'
 
+
 @app.route('/ask', methods=['POST'])
 @authenticate
 def ask_question():
@@ -210,10 +211,8 @@ def ask_question():
 
     response = agent_chain.run(input=enhanced_query)
 
-    print('markdown', urlize(markdown.markdown(response)));
-
     data = {
-      "answer": urlize(markdown.markdown(response))
+      "answer": markdown.markdown(linkify(response))
     }
 
     return jsonify(data)
