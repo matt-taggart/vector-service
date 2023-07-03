@@ -1,22 +1,18 @@
 from flask import Flask, request, jsonify
-import requests
 import time
-from requests.auth import HTTPBasicAuth
-import json
-from html2text import html2text
 import os
 import textwrap
 import openai
 import markdown
 import jwt
+import vecs
+import atlassian_jwt_auth 
+from requests.auth import HTTPBasicAuth
 from sqlalchemy import create_engine, text, select, delete, Table, MetaData
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from supabase import create_client, Client
-import atlassian_jwt_auth 
-
-import vecs
-from llama_index import ListIndex, SimpleWebPageReader, SimpleDirectoryReader, Document, StorageContext, load_index_from_storage
+from llama_index import ListIndex, SimpleWebPageReader, SimpleDirectoryReader, StorageContext, load_index_from_storage
 from llama_index.indices.vector_store import VectorStoreIndex
 from llama_index.vector_stores import SupabaseVectorStore
 from llama_index.node_parser import SimpleNodeParser
@@ -30,6 +26,7 @@ from langchain import OpenAI
 from init_env import load_env_vars
 from auth import authenticate, generate_atlassian_jwt 
 from utils import linkify 
+from atlassian_requests import fetchPages 
 
 load_env_vars()
 
@@ -38,12 +35,11 @@ DB_CONNECTION_STRING = os.environ.get('DB_CONNECTION_STRING')
 CONFLUENCE_EMAIL = os.environ.get('CONFLUENCE_EMAIL')
 CONFLUENCE_API_TOKEN = os.environ.get('CONFLUENCE_API_TOKEN')
 PROJECT_PILOT_API_KEY = os.environ.get("PROJECT_PILOT_API_KEY")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 
 app = Flask(__name__)
 parser = SimpleNodeParser()
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
@@ -60,72 +56,6 @@ scheduler = BackgroundScheduler(daemon=True, jobstores=jobstores)
 # Run job every day at a specific time
 scheduler.add_job(job, trigger='cron', hour=21, minute=43)
 scheduler.start()
-
-
-def fetchPages(org_name, fragment, client_key, shared_secret, key, documents = []):
-    base_url = f"https://{org_name}.atlassian.net"
-    url = f"{base_url}{fragment}"
-    method = 'GET'
-    index = url.find("/api")
-    formatted_fragment = url[index:]
-
-    encoded_jwt = generate_atlassian_jwt(key, client_key, method, formatted_fragment, shared_secret)
-
-    headers = {
-      "Accept": "application/json",
-      "Authorization": f"JWT {encoded_jwt}"
-    }
-
-    payload = json.dumps({
-      "spaceId": "<string>",
-      "status": "current",
-      "title": "<string>",
-      "parentId": "<string>",
-      "_links": {
-          "webui": "<string>",
-          "links": "<string>",
-      },
-      "body": {
-        "representation": "storage",
-        "value": "<string>"
-      }
-    })
-
-    response = requests.request(
-       "GET",
-       url,
-       data=payload,
-       headers=headers
-    )
-
-    pages = json.loads(response.text)
-
-    next_link = pages.get("_links", {}).get("next", None)
-    pages_results = pages['results']
-
-    for page in pages_results:
-        id = page['id']
-        title = page['title']
-        url_fragment = page['_links']['webui']
-        full_url = base_url + url_fragment
-        html_content = page['body']['storage']['value']
-        content = f"""
-         The url for the content below is: {full_url}.
-
-         The content of this document is {html_content}.
-        """
-        formatted_content = html2text(content)
-
-        documents.append(Document(
-            text=formatted_content,
-            doc_id=id,
-            extra_info={'title': title, 'url': full_url }
-        ))
-
-    if next_link:
-        return fetchPages(org_name, next_link, client_key, shared_secret, key, documents)
-
-    return documents
 
 
 @app.route('/initialize', methods=['POST'])
