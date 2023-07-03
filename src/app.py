@@ -9,10 +9,6 @@ import textwrap
 import openai
 import markdown
 import jwt
-from hashlib import sha256
-import urllib.parse
-from urllib.parse import urlparse, parse_qs, quote
-import marshal
 from sqlalchemy import create_engine, text, select, delete, Table, MetaData
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -32,7 +28,7 @@ from langchain.agents import initialize_agent
 from langchain import OpenAI
 
 from init_env import load_env_vars
-from auth import authenticate 
+from auth import authenticate, generate_atlassian_jwt 
 from utils import linkify 
 
 load_env_vars()
@@ -64,47 +60,6 @@ scheduler = BackgroundScheduler(daemon=True, jobstores=jobstores)
 # Run job every day at a specific time
 scheduler.add_job(job, trigger='cron', hour=21, minute=43)
 scheduler.start()
-
-def create_query_string_hash(method, url):
-    # Parse the URL
-    parsed_url = urlparse(url)
-
-    # Extract and URL-encode the path
-    path = quote(parsed_url.path)
-
-    # Extract and URL-encode the query parameters
-    query_params = parse_qs(parsed_url.query)
-    canonical_query_string = '&'.join([
-        f'{quote(param)}={quote(value[0])}'
-        for param, value in sorted(query_params.items())
-    ])
-
-    # Create the canonical request string
-    canonical_request = f'{method}&{path}&{canonical_query_string}'
-
-    # Compute the SHA-256 hash of the canonical request string
-    return sha256(canonical_request.encode('utf-8')).hexdigest()
-
-def generate_atlassian_jwt(client_info_key, client_key, method, url, shared_secret):
-    # Generate the QSH
-    qsh = create_query_string_hash(method, url)
-
-    # Get the current time
-    now = int(time.time())
-
-    # Create the JWT payload
-    payload = {
-        'iss': client_info_key,
-        'iat': now,
-        'exp': now + 180,
-        'qsh': qsh,
-        'aud': client_key,
-    }
-
-    # Encode the JWT
-    encoded_jwt = jwt.encode(payload, shared_secret, algorithm='HS256')
-
-    return encoded_jwt
 
 
 def fetchPages(org_name, fragment, client_key, shared_secret, key, documents = []):
