@@ -26,7 +26,7 @@ from langchain import OpenAI
 from init_env import load_env_vars
 from auth import authenticate, generate_atlassian_jwt 
 from utils import linkify 
-from atlassian_requests import fetchPages 
+from atlassian_requests import process_requests
 
 load_env_vars()
 
@@ -70,7 +70,15 @@ def create_embeddings():
     response = supabase.table('companies').select('shared_secret').eq('client_key', client_key).execute()
     shared_secret = response.data[0]['shared_secret']
 
-    documents = fetchPages(org_name, "/wiki/api/v2/pages?body-format=storage&limit=2", client_key, shared_secret, key)
+    pages = process_requests("page", org_name, "/wiki/api/v2/pages?body-format=storage&limit=2", client_key, shared_secret, key)
+    blog_posts = process_requests("blog post", org_name, "/wiki/api/v2/blogposts?body-format=storage&limit=2", client_key, shared_secret, key)
+
+    documents = pages + blog_posts
+
+    vector_store = SupabaseVectorStore(
+        postgres_connection_string=DB_CONNECTION_STRING, 
+        collection_name=org_name
+    )
 
     engine = create_engine(DB_CONNECTION_STRING)
 
@@ -93,10 +101,6 @@ def create_embeddings():
         for id in ids:
             ids_to_delete.append(id[0])
 
-    vector_store = SupabaseVectorStore(
-        postgres_connection_string=DB_CONNECTION_STRING, 
-        collection_name=org_name
-    )
     storage_context = StorageContext.from_defaults(vector_store=vector_store)
     index = VectorStoreIndex.from_documents(documents, storage_context=storage_context)
 
