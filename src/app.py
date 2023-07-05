@@ -17,11 +17,18 @@ from llama_index.indices.vector_store import VectorStoreIndex
 from llama_index.vector_stores import SupabaseVectorStore
 from llama_index.node_parser import SimpleNodeParser
 from llama_index.prompts  import Prompt
-from llama_index.chat_engine.condense_question import CondenseQuestionChatEngine
 from llama_index.langchain_helpers.agents import LlamaToolkit, create_llama_chat_agent, IndexToolConfig
 from langchain.chains.conversation.memory import ConversationBufferMemory
 from langchain.agents import initialize_agent
 from langchain import OpenAI
+from langchain.prompts import ChatPromptTemplate
+from langchain.output_parsers import ResponseSchema, StructuredOutputParser
+from langchain.output_parsers import StructuredOutputParser
+from llama_index.llm_predictor import StructuredLLMPredictor
+from llama_index.prompts.prompts import QuestionAnswerPrompt, RefinePrompt
+from llama_index.prompts.default_prompts import DEFAULT_TEXT_QA_PROMPT_TMPL, DEFAULT_REFINE_PROMPT_TMPL
+from llama_index.output_parsers import LangchainOutputParser
+from llama_index import ServiceContext 
 
 from init_env import load_env_vars
 from auth import authenticate, generate_atlassian_jwt 
@@ -138,7 +145,42 @@ def ask_question():
     )
 
     index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
-    query_engine = index.as_query_engine()
+    llm_predictor = StructuredLLMPredictor()
+
+    create_schema = ResponseSchema(
+        name="create",
+        description="Use the tool to answer the questions: Does the user want to create something? Answer True if yes or False if not or unknown."
+    )
+
+    answer_schema = ResponseSchema(
+        name="answer",
+        description="Use the tool to give a response in Markdown format."
+    )
+
+    # define output schema
+    response_schemas = [
+        create_schema,
+        answer_schema
+    ]
+
+    # define output parser
+    lc_output_parser = StructuredOutputParser.from_response_schemas(response_schemas)
+    output_parser = LangchainOutputParser(lc_output_parser)
+
+    # format each prompt with output parser instructions
+    fmt_qa_tmpl = output_parser.format(DEFAULT_TEXT_QA_PROMPT_TMPL)
+    fmt_refine_tmpl = output_parser.format(DEFAULT_REFINE_PROMPT_TMPL)
+    qa_prompt = QuestionAnswerPrompt(fmt_qa_tmpl, output_parser=output_parser)
+    refine_prompt = RefinePrompt(fmt_refine_tmpl, output_parser=output_parser)
+
+    # query index
+    query_engine = index.as_query_engine(
+        service_context=ServiceContext.from_defaults(
+            llm_predictor=llm_predictor
+        ),
+        text_qa_template=qa_prompt, 
+        refine_template=refine_prompt, 
+    )
 
     tool_config = IndexToolConfig(
         query_engine=query_engine, 
@@ -169,7 +211,7 @@ def ask_question():
         verbose=True
     )
 
-    enhanced_query = f"Use the tool to answer: {query}. Output the answer in Markdown format."
+    enhanced_query = f"Use the tool to answer: {query}."
 
     response = agent_chain.run(input=enhanced_query)
 
